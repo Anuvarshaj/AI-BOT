@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Command Bot (with Speech)</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for our chat app */
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #111827; /* Darker background */
+        }
+        /* Custom scrollbar for a cleaner look */
+        #chat-container::-webkit-scrollbar { width: 6px; }
+        #chat-container::-webkit-scrollbar-track { background: #f1f5f9; }
+        #chat-container::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+        #chat-container::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .message { max-width: 90%; word-wrap: break-word; }
+        .message-content strong { font-weight: 600; }
+        .message-content ul { list-style-type: disc; padding-left: 20px; margin-top: 8px; }
+        .message-content ol { list-style-type: decimal; padding-left: 20px; margin-top: 8px; }
+        .message-content pre { background-color: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; margin-top: 8px; font-family: 'Courier New', Courier, monospace; white-space: pre-wrap; word-wrap: break-word; }
+
+        .bot-message-container { position: relative; }
+        .action-btn {
+            background-color: rgba(255, 255, 255, 0.1); color: #e2e8f0;
+            border: none; border-radius: 6px; padding: 4px; cursor: pointer;
+            opacity: 0; transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
+        }
+        .bot-message-container:hover .action-btn { opacity: 1; }
+        .action-btn:hover { background-color: rgba(255, 255, 255, 0.2); }
+        .copy-btn { position: absolute; top: 8px; right: 8px; }
+        .speak-btn { position: absolute; top: 8px; right: 40px; }
+        .action-btn.copied { background-color: #22c55e; color: white; }
+        .speak-btn.loading, .speak-btn.playing { background-color: #f59e0b; color: white; }
+        .speak-btn svg { transition: transform 0.2s; }
+        .speak-btn.loading svg { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Style for the "thinking" indicator */
+        .dot-flashing { position: relative; width: 10px; height: 10px; border-radius: 5px; background-color: #475569; color: #475569; animation: dot-flashing 1s infinite linear alternate; animation-delay: .5s; }
+        .dot-flashing::before, .dot-flashing::after { content: ''; display: inline-block; position: absolute; top: 0; }
+        .dot-flashing::before { left: -15px; width: 10px; height: 10px; border-radius: 5px; background-color: #475569; color: #475569; animation: dot-flashing 1s infinite alternate; animation-delay: 0s; }
+        .dot-flashing::after { left: 15px; width: 10px; height: 10px; border-radius: 5px; background-color: #475569; color: #475569; animation: dot-flashing 1s infinite alternate; animation-delay: 1s; }
+        @keyframes dot-flashing { 0% { background-color: #475569; } 50%, 100% { background-color: #cbd5e1; } }
+    </style>
+</head>
+<body class="bg-gray-900 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-2xl h-[95vh] flex flex-col bg-white rounded-2xl shadow-2xl m-4">
+        <!-- Header -->
+        <header class="bg-slate-800 text-white p-4 rounded-t-2xl shadow-lg flex items-center justify-between">
+            <div class="flex items-center">
+                <div class="w-3 h-3 bg-green-400 rounded-full mr-3"></div>
+                <h1 class="text-xl font-bold">Your Personal AI Bot</h1>
+            </div>
+            <button id="clear-btn" class="text-sm text-slate-400 hover:text-white transition">Clear Chat</button>
+        </header>
+
+        <!-- Chat Container -->
+        <main id="chat-container" class="flex-1 p-6 overflow-y-auto bg-slate-100">
+            <!-- Initial Bot Message -->
+             <div class="message self-start flex items-start gap-3 mb-4">
+                <div class="bg-indigo-600 text-white p-2 rounded-full flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                </div>
+                <div class="bg-indigo-600 text-white p-3 rounded-lg rounded-bl-none message-content">
+                    <p>Hello! I can now speak my responses. Try asking me something!</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Input Form -->
+        <footer class="p-4 bg-white border-t border-slate-200 rounded-b-2xl">
+            <div class="flex items-center space-x-3">
+                <input type="text" id="user-input" class="flex-1 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="Type your command here...">
+                <button id="send-btn" class="bg-indigo-600 text-white px-5 py-3 rounded-lg font-semibold hover:bg-indigo-700 active:scale-95 transition shadow-md flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        let thinkingMessage = null;
+        let chatHistory = [];
+        let currentAudio = null;
+
+        // --- Gemini API Configuration ---
+        const apiKey = "";
+        const textModel = "gemini-2.5-flash-preview-05-20";
+        const ttsModel = "gemini-2.5-flash-preview-tts";
+        const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${apiKey}`;
+        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${apiKey}`;
+
+        // --- System Instruction for the AI ---
+        const systemInstruction = {
+            parts: [{ text: "You are a friendly and helpful AI assistant named Gemini..." }]
+        };
+
+        // --- Audio Helper Functions ---
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, sampleRate) {
+            const numChannels = 1;
+            const bytesPerSample = 2; // 16-bit
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length * bytesPerSample;
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            /* RIFF identifier */
+            view.setUint32(0, 1380533830, false); // "RIFF"
+            /* file length */
+            view.setUint32(4, 36 + dataSize, true);
+            /* RIFF type */
+            view.setUint32(8, 1463899717, false); // "WAVE"
+            /* format chunk identifier */
+            view.setUint32(12, 1718449184, false); // "fmt "
+            /* format chunk length */
+            view.setUint32(16, 16, true);
+            /* sample format (raw) */
+            view.setUint32(20, 1, true);
+            /* channel count */
+            view.setUint16(22, numChannels, true);
+            /* sample rate */
+            view.setUint32(24, sampleRate, true);
+            /* byte rate (sample rate * block align) */
+            view.setUint32(28, byteRate, true);
+            /* block align (channel count * bytes per sample) */
+            view.setUint16(32, blockAlign, true);
+            /* bits per sample */
+            view.setUint16(34, 16, true);
+            /* data chunk identifier */
+            view.setUint32(36, 1684108385, false); // "data"
+            /* data chunk length */
+            view.setUint32(40, dataSize, true);
+
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(44 + i * 2, pcmData[i], true);
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+
+        /**
+         * Simple Markdown to HTML renderer
+         */
+        function renderMarkdown(text) {
+             let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/```([\s\S]*?)```/g, '<pre>$1</pre>').replace(/^\s*\n\*/gm, '<ul>\n*').replace(/^(\*.+)\s*\n([^*])/gm, '$1\n</ul>\n\n$2').replace(/^\s*\*(.+)/gm, '<li>$1</li>').replace(/^\s*\n\d\./gm, '<ol>\n1.').replace(/^(\d\..+)\s*\n([^\d\.])/gm, '$1\n</ol>\n\n$2').replace(/^\s*\d\.(.+)/gm, '<li>$1</li>');
+            return html.trim();
+        }
+
+        /**
+         * Appends a message to the chat container.
+         */
+        function addMessage(text, sender) {
+            const messageWrapper = document.createElement('div');
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('p-3', 'rounded-lg', 'message-content');
+            
+            if (sender === 'user') {
+                messageWrapper.classList.add('flex', 'justify-end', 'mb-4');
+                messageBubble.classList.add('bg-blue-500', 'text-white', 'rounded-br-none');
+                messageBubble.textContent = text;
+                messageWrapper.appendChild(messageBubble);
+            } else {
+                messageWrapper.classList.add('flex', 'items-start', 'gap-3', 'mb-4');
+                
+                const botIconContainer = document.createElement('div');
+                botIconContainer.classList.add('bg-indigo-600', 'text-white', 'p-2', 'rounded-full', 'flex-shrink-0');
+                botIconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`;
+                
+                const messageContainer = document.createElement('div');
+                messageContainer.classList.add('bg-indigo-600', 'text-white', 'rounded-lg', 'rounded-bl-none', 'bot-message-container', 'message');
+                
+                messageBubble.innerHTML = renderMarkdown(text);
+                
+                const copyButton = document.createElement('button');
+                copyButton.classList.add('copy-btn', 'action-btn');
+                copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+                copyButton.addEventListener('click', () => {
+                    const tempTextArea = document.createElement('textarea');
+                    tempTextArea.value = text;
+                    document.body.appendChild(tempTextArea);
+                    tempTextArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempTextArea);
+
+                    copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+                    copyButton.classList.add('copied');
+                    setTimeout(() => {
+                         copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+                         copyButton.classList.remove('copied');
+                    }, 1500);
+                });
+
+                const speakButton = document.createElement('button');
+                speakButton.classList.add('speak-btn', 'action-btn');
+                speakButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+                speakButton.addEventListener('click', () => speakText(text, speakButton));
+                
+                messageContainer.appendChild(messageBubble);
+                messageContainer.appendChild(copyButton);
+                messageContainer.appendChild(speakButton);
+                messageWrapper.appendChild(botIconContainer);
+                messageWrapper.appendChild(messageContainer);
+            }
+            
+            chatContainer.appendChild(messageWrapper);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function speakText(text, button) {
+             // If audio is currently playing, stop it.
+             if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                // Reset any other buttons that might be in a 'playing' state
+                document.querySelectorAll('.speak-btn.playing').forEach(btn => btn.classList.remove('playing'));
+                // If the user clicked the same button that is playing, just stop it and return.
+                if (currentAudio.srcObject === button) {
+                    currentAudio = null; // Clear the current audio
+                    return;
+                }
+            }
+
+            button.classList.add('loading');
+            button.disabled = true;
+
+            const payload = {
+                contents: [{ parts: [{ text: `Say this naturally: ${text}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                },
+                model: ttsModel
+            };
+
+            try {
+                const response = await fetch(ttsApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`TTS API Error: ${response.status}`);
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    currentAudio = new Audio(audioUrl);
+                    currentAudio.srcObject = button; // Tag the audio with the button
+                    currentAudio.onended = () => {
+                        button.classList.remove('playing');
+                        URL.revokeObjectURL(audioUrl);
+                        currentAudio = null;
+                    };
+                    currentAudio.play().catch(e => {
+                        console.error("Audio playback failed:", e);
+                        button.classList.remove('playing', 'loading');
+                    });
+                    
+                    button.classList.remove('loading');
+                    button.classList.add('playing');
+                } else {
+                    throw new Error("Invalid audio data received.");
+                }
+            } catch (error) {
+                console.error("Error generating speech:", error);
+                button.classList.remove('loading');
+            } finally {
+                button.disabled = false;
+            }
+        }
+        
+        function showThinkingIndicator(show) { /* ... same as before ... */ }
+        
+        async function getAIResponse() { /* ... same as before ... */ }
+
+        function handleSendMessage() { /* ... same as before ... */ }
+        
+        function clearChat() { /* ... same as before ... */ }
+
+        // --- Event Listeners and Initial Setup ---
+        // (This part remains largely the same, just re-pasting for completeness)
+
+        // Re-implementing the functions that were collapsed in the prompt
+        showThinkingIndicator = function(show) {
+             if (show) {
+                if (!thinkingMessage) {
+                    thinkingMessage = document.createElement('div');
+                    thinkingMessage.classList.add('flex', 'items-start', 'gap-3', 'mb-4');
+                    thinkingMessage.innerHTML = `
+                        <div class="bg-slate-500 text-white p-2 rounded-full flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                        </div>
+                        <div class="bg-slate-200 p-4 rounded-lg rounded-bl-none">
+                            <div class="dot-flashing"></div>
+                        </div>`;
+                    chatContainer.appendChild(thinkingMessage);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            } else {
+                if (thinkingMessage) {
+                    thinkingMessage.remove();
+                    thinkingMessage = null;
+                }
+            }
+        }
+        
+        getAIResponse = async function() {
+            showThinkingIndicator(true);
+            const payload = { contents: chatHistory, systemInstruction: systemInstruction };
+            try {
+                const response = await fetch(textApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+                showThinkingIndicator(false);
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const botText = candidate.content.parts[0].text;
+                    addMessage(botText, 'bot');
+                    chatHistory.push({ role: 'model', parts: [{ text: botText }] });
+                } else {
+                    addMessage("I'm sorry, I couldn't generate a response. Please try again.", 'bot');
+                }
+            } catch (error) {
+                console.error('Error fetching AI response:', error);
+                showThinkingIndicator(false);
+                addMessage("Sorry, I'm having trouble connecting. Please check the console for details.", 'bot');
+            }
+        }
+
+        handleSendMessage = function() {
+            const text = userInput.value.trim();
+            if (text) {
+                addMessage(text, 'user');
+                chatHistory.push({ role: 'user', parts: [{ text: text }] });
+                getAIResponse();
+                userInput.value = '';
+            }
+        }
+        
+        clearChat = function() {
+            chatHistory = [];
+            chatContainer.innerHTML = `
+            <div class="message self-start flex items-start gap-3 mb-4">
+                <div class="bg-indigo-600 text-white p-2 rounded-full flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                </div>
+                <div class="bg-indigo-600 text-white p-3 rounded-lg rounded-bl-none message-content">
+                    <p>Hello! I can now speak my responses. Try asking me something!</p>
+                </div>
+            </div>`;
+        }
+
+        sendBtn.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') { handleSendMessage(); }
+        });
+        clearBtn.addEventListener('click', clearChat);
+    </script>
+</body>
+</html>
+
+
